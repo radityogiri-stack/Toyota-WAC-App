@@ -101,19 +101,10 @@ class handler(BaseHTTPRequestHandler):
             return
 
         elif path.startswith("/api/wac/detail/"):
+            wac_id = path.replace("/api/wac/detail/", "").split("?")[0].strip()
+            force = query.get("refresh", ["0"])[0] in ["1", "true"]
             try:
-                wac_id = path.replace("/api/wac/detail/", "").split("?")[0].strip()
-                force = query.get("refresh", ["0"])[0] in ["1", "true"]
-                data = client.get_wac_detail(wac_id, force_refresh=force)
-                self._send_json({"success": True, "data": data})
-            except Exception as e:
-                self._send_json({"success": False, "error": str(e)}, 500)
-            return
-
-        elif path.startswith("/api/wac/generate-pdf/"):
-            try:
-                wac_id = path.replace("/api/wac/generate-pdf/", "").split("?")[0].strip()
-                data = client.generate_pdf_data(wac_id)
+                data = client.get_wac_full(wac_id, force_refresh=force)
                 self._send_json({"success": True, "data": data})
             except Exception as e:
                 self._send_json({"success": False, "error": str(e)}, 500)
@@ -133,19 +124,85 @@ class handler(BaseHTTPRequestHandler):
         except Exception:
             payload = {}
 
-        if path.startswith("/api/wac/save-draft/"):
+        if path.startswith("/api/wac/autofill/"):
+            wac_id = path.replace("/api/wac/autofill/", "").split("?")[0].strip()
             try:
-                wac_id = path.replace("/api/wac/save-draft/", "").split("?")[0].strip()
-                res = client.save_draft(wac_id, payload)
+                res = client.generate_auto_fill_payload(wac_id, payload.get("options"))
+                self._send_json({"success": True, "data": res})
+            except Exception as e:
+                self._send_json({"success": False, "error": str(e)}, 500)
+            return
+
+        elif path.startswith("/api/wac/annotation/update/"):
+            wac_id = path.replace("/api/wac/annotation/update/", "").split("?")[0].strip()
+            try:
+                items = payload.get("items", [])
+                res = client.update_annotation(wac_id, items)
+                self._send_json({"success": True, "data": res})
+            except Exception as e:
+                self._send_json({"success": False, "error": str(e)}, 500)
+            return
+
+        elif path.startswith("/api/wac/annotation/delete/"):
+            wac_id = path.replace("/api/wac/annotation/delete/", "").split("?")[0].strip()
+            try:
+                point = payload.get("annotationPoint") or int(payload.get("point", 1))
+                res = client.delete_annotation(wac_id, point)
+                self._send_json({"success": True, "data": res})
+            except Exception as e:
+                self._send_json({"success": False, "error": str(e)}, 500)
+            return
+
+        elif path.startswith("/api/wac/save-draft/"):
+            wac_id = path.replace("/api/wac/save-draft/", "").split("?")[0].strip()
+            try:
+                chk = payload.get("checklist") or {}
+                rec = payload.get("recommendation") or {}
+                det = payload.get("detail") or {}
+
+                if "mileage" in det:
+                    chk["mileage"] = det["mileage"]
+                if "carrierName" in det:
+                    chk["carrierName"] = det["carrierName"]
+                if "carrierPhoneNumber" in det:
+                    chk["carrierPhoneNumber"] = det["carrierPhoneNumber"]
+                if "isCarrierEqualMaster" in det:
+                    chk["isCarrierEqualMaster"] = det["isCarrierEqualMaster"]
+
+                res = client.save_draft(wac_id, chk, rec)
                 self._send_json({"success": True, "data": res})
             except Exception as e:
                 self._send_json({"success": False, "error": str(e)}, 500)
             return
 
         elif path.startswith("/api/wac/finalize/"):
+            wac_id = path.replace("/api/wac/finalize/", "").split("?")[0].strip()
             try:
-                wac_id = path.replace("/api/wac/finalize/", "").split("?")[0].strip()
-                res = client.finalize_wac(wac_id, payload)
+                chk = payload.get("checklist") or {}
+                rec = payload.get("recommendation") or {}
+                det = payload.get("detail") or {}
+
+                if "mileage" in det:
+                    chk["mileage"] = det["mileage"]
+                if "carrierName" in det:
+                    chk["carrierName"] = det["carrierName"]
+                if "carrierPhoneNumber" in det:
+                    chk["carrierPhoneNumber"] = det["carrierPhoneNumber"]
+                if "isCarrierEqualMaster" in det:
+                    chk["isCarrierEqualMaster"] = det["isCarrierEqualMaster"]
+
+                cust_sig = payload.get("customerSignature")
+                sa_sig = payload.get("saSignature")
+                is_offline = payload.get("isOffline", True)
+
+                res = client.finalize_wac(
+                    wac_id=wac_id,
+                    checklist_payload=chk,
+                    recs_payload=rec,
+                    customer_sig_b64=cust_sig,
+                    sa_sig_b64=sa_sig,
+                    is_offline=is_offline
+                )
                 self._send_json({"success": True, "data": res})
             except Exception as e:
                 self._send_json({"success": False, "error": str(e)}, 500)
