@@ -3559,11 +3559,35 @@
       const tires = checklistFormState.tires || {};
       const tireYears = checklistFormState.tireYears || {};
 
+      const defaultInteriorItems = [
+        { category: "INTERIOR", partConst: "POWER_WINDOW", partName: "Power Window", status: "GOOD" },
+        { category: "INTERIOR", partConst: "DASHBOARD", partName: "Dashboard", status: "GOOD" },
+        { category: "INTERIOR", partConst: "SEAT", partName: "Seat", status: "GOOD" },
+        { category: "OTHERS", partConst: "BATTERY", partName: "Battery", status: "GOOD" },
+        { category: "OTHERS", partConst: "ALARM", partName: "Alarm", status: "GOOD" },
+        { category: "OTHERS", partConst: "ENGINE_ROOM", partName: "Engine Room", status: "GOOD" },
+        { category: "OTHERS", partConst: "OIL_CONDITION", partName: "Oil Condition", status: "GOOD" },
+        { category: "INTERIOR", partConst: "SPARE_TIRE", partName: "Ban Serep", status: "EXIST" }
+      ];
+      let rawInteriors = (checklistFormState.interiors && checklistFormState.interiors.length > 0) ? checklistFormState.interiors : (chk.interiorItems || defaultInteriorItems);
+      const sanitizedInteriors = rawInteriors.map(item => {
+        let st = item.status;
+        if (!st || st === "") {
+          st = (item.partConst === "SPARE_TIRE") ? "EXIST" : "GOOD";
+        }
+        return {
+          category: item.category || "INTERIOR",
+          partConst: item.partConst,
+          partName: item.partName,
+          status: st
+        };
+      });
+
       const tireObj = {
-        leftFront: (tires.FL || tireYears.FL) ? { depth: null, color: tires.FL || null, year: tireYears.FL ? Number(tireYears.FL) : null } : null,
-        leftRear: (tires.RL || tireYears.RL) ? { depth: null, color: tires.RL || null, year: tireYears.RL ? Number(tireYears.RL) : null } : null,
-        rightRear: (tires.RR || tireYears.RR) ? { depth: null, color: tires.RR || null, year: tireYears.RR ? Number(tireYears.RR) : null } : null,
-        rightFront: (tires.FR || tireYears.FR) ? { depth: null, color: tires.FR || null, year: tireYears.FR ? Number(tireYears.FR) : null } : null
+        leftFront: { depth: null, color: tires.FL || "GREEN", year: tireYears.FL ? Number(tireYears.FL) : 2026 },
+        leftRear: { depth: null, color: tires.RL || "GREEN", year: tireYears.RL ? Number(tireYears.RL) : 2026 },
+        rightRear: { depth: null, color: tires.RR || "GREEN", year: tireYears.RR ? Number(tireYears.RR) : 2026 },
+        rightFront: { depth: null, color: tires.FR || "GREEN", year: tireYears.FR ? Number(tireYears.FR) : 2026 }
       };
 
       const liveDescEl = document.getElementById("chkDescription");
@@ -3572,15 +3596,15 @@
       const currentOtherDesc = liveOtherDescEl ? liveOtherDescEl.value : (checklistFormState.otherDescription || "");
 
       const checklistPayload = {
-        interiorItems: checklistFormState.interiors && checklistFormState.interiors.length > 0 ? checklistFormState.interiors : (chk.interiorItems || []),
-        isUsingTCO: checklistFormState.isUsingTCO === true ? true : (checklistFormState.isUsingTCO === false ? false : null),
-        fuelIndicatorV2: currentFuel,
+        interiorItems: sanitizedInteriors,
+        isUsingTCO: checklistFormState.isUsingTCO === true ? true : false,
+        fuelIndicatorV2: currentFuel || 0.8,
         description: currentDesc,
         otherDescription: currentOtherDesc,
         interiorDescription: checklistFormState.interiorDescription || "",
         tireMeasurement: "COLOR",
         tire: tireObj,
-        mileage: mileageVal,
+        mileage: mileageVal !== null ? mileageVal : (activeWACData?.detail?.actualMileage || 15000),
         carrierName: cName,
         carrierPhoneNumber: cPhone,
         isCarrierEqualMaster: isEqMaster
@@ -3591,20 +3615,10 @@
       const hasBPDamage = damagedPoints.length > 0;
       
       function formatRecResponse(choice, preferredDate = null, reasonCode = null, desc = "", cr7Traits = []) {
-        if (!choice) {
-          return {
-            choice: "",
-            preferredDate: null,
-            rejectionReasonCode: "",
-            rejectionReasonNote: "",
-            responseNote: "",
-            description: desc || "",
-            CR7Traits: cr7Traits || []
-          };
-        }
-        const isNot = choice === "NOT_INTERESTED";
+        const effChoice = choice || "NOT_INTERESTED";
+        const isNot = effChoice === "NOT_INTERESTED";
         return {
-          choice: choice,
+          choice: effChoice,
           preferredDate: isNot ? null : preferredDate,
           rejectionReasonCode: isNot ? (reasonCode || "COST") : "",
           rejectionReasonNote: "",
@@ -3619,28 +3633,13 @@
         recs.bodyAndPaint = {
           isNeedBP: hasBPDamage,
           damagedPoints: damagedPoints,
-          response: formatRecResponse(bpChoice)
+          response: formatRecResponse(bpChoice || "NOT_INTERESTED")
         };
       } else {
-        delete recs.bodyAndPaint;
+        recs.bodyAndPaint = null;
       }
 
-      if (!recs.upgradeAndOptionalService) recs.upgradeAndOptionalService = {};
-      
       const tmoChoice = recsFormState.tmo?.choice || null;
-      recs.upgradeAndOptionalService.toyotaMotorOil = {
-        response: formatRecResponse(tmoChoice)
-      };
-      
-      recs.upgradeAndOptionalService.carCare = {
-        recommended: recsFormState.carCare?.recommended || [],
-        now: recsFormState.carCare?.now || [],
-        later: recsFormState.carCare?.later || []
-      };
-      if (recsFormState.carCare?.choice) {
-        recs.upgradeAndOptionalService.carCare.response = formatRecResponse(recsFormState.carCare.choice);
-      }
-
       const tireChoice = recsFormState.tireSolution?.choice || null;
       const cr7Traits = [];
       const tireTraitEl = document.getElementById("tireCR7Trait");
@@ -3657,43 +3656,47 @@
 
       const tireDesc = document.getElementById("tireDescriptionInput")?.value || "";
 
-      recs.upgradeAndOptionalService.tireSolution = {
-        tireColorFL: tires.FL || null,
-        tireColorFR: tires.FR || null,
-        tireColorRL: tires.RL || null,
-        tireColorRR: tires.RR || null,
-        tireYearFL: tireYears.FL ? parseInt(tireYears.FL, 10) : null,
-        tireYearFR: tireYears.FR ? parseInt(tireYears.FR, 10) : null,
-        tireYearRL: tireYears.RL ? parseInt(tireYears.RL, 10) : null,
-        tireYearRR: tireYears.RR ? parseInt(tireYears.RR, 10) : null,
-        tireYearrRR: tireYears.RR ? parseInt(tireYears.RR, 10) : null,
-        isNotAvailable: false,
-        response: formatRecResponse(tireChoice, tirePreferredEpoch, null, tireDesc, cr7Traits)
-      };
-
-      const tgbChoice = recsFormState.tgb?.choice || null;
-      recs.upgradeAndOptionalService.toyotaGenuineBattery = {
-        response: formatRecResponse(tgbChoice)
+      recs.upgradeAndOptionalService = {
+        toyotaMotorOil: {
+          response: formatRecResponse(tmoChoice || "NOT_INTERESTED")
+        },
+        tireSolution: {
+          tireColorFL: tires.FL || "GREEN",
+          tireColorFR: tires.FR || "GREEN",
+          tireColorRL: tires.RL || "GREEN",
+          tireColorRR: tires.RR || "GREEN",
+          tireYearFL: tireYears.FL ? parseInt(tireYears.FL, 10) : 2026,
+          tireYearFR: tireYears.FR ? parseInt(tireYears.FR, 10) : 2026,
+          tireYearRL: tireYears.RL ? parseInt(tireYears.RL, 10) : 2026,
+          tireYearRR: tireYears.RR ? parseInt(tireYears.RR, 10) : 2026,
+          tireYearrRR: tireYears.RR ? parseInt(tireYears.RR, 10) : 2026,
+          isNotAvailable: false,
+          response: formatRecResponse(tireChoice || "NOT_INTERESTED", tirePreferredEpoch, null, tireDesc, cr7Traits)
+        }
       };
 
       recs.TCO = {
         recommended: [],
         now: [],
-        later: []
+        later: [],
+        preferredDate: null,
+        notInterested: null
       };
 
       const tradeInChoice = recsFormState.tradeIn?.choice || null;
       recs.tradeIn = {
-        response: formatRecResponse(tradeInChoice)
+        response: formatRecResponse(tradeInChoice || "NOT_INTERESTED")
       };
 
       const testDriveChoice = recsFormState.testDrive?.choice || null;
       recs.testDrive = {
-        response: formatRecResponse(testDriveChoice)
+        response: formatRecResponse(testDriveChoice || "NOT_INTERESTED")
       };
 
-      // CR7 & Others matching Web TAM APIM payload specification
-      recs.cr7AndOthers = recsFormState.cr7AndOthers || [];
+      recs.telematics = null;
+      recs.insuranceRenewal = null;
+      recs.others = null;
+      recs.cr7AndOthers = [];
 
       return {
         detail: detailPayload,
