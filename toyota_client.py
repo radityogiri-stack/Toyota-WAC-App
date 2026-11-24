@@ -887,3 +887,4 @@ class ToyotaBeyondClient:
                 except Exception:
                     pass
         threading.Thread(target=_sync_loop, daemon=True).start()
+
